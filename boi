@@ -19,7 +19,7 @@
     local stats = cloneref(game:GetService("Stats"))
     local coregui = cloneref(game:GetService("CoreGui"))
     local debris = cloneref(game:GetService("Debris"))
-    local tween_service = cloneref((game:GetService("TweenService"))
+    local tween_service = cloneref(game:GetService("TweenService"))
     local sound_service = cloneref(game:GetService("SoundService"))
 
     local vec2 = Vector2.new
