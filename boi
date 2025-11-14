@@ -1935,7 +1935,7 @@
                         FontFace = fonts.small;
                         TextColor3 = rgb(0, 0, 0);
                         BorderColor3 = rgb(0, 0, 0);
-                        Text = "";
+                        Text = cfg.name;
                         Parent = self.items[ "elements" ];
                         Name = "\0";
                         BackgroundTransparency = 1;
