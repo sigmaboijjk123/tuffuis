@@ -2235,6 +2235,19 @@
                 end
             end
         end
+        function library:builtinautoupdatingplayerdropdown(flag, interval)
+            interval = interval or 5
+            spawn(function()
+                while true do 
+                    wait(interval)
+                    local players_list = {}
+                    for _, player in players:GetPlayers() do 
+                        insert(players_list, player.Name)
+                    end
+                    library:updatedropdown(flag, players_list)
+                end
+            end)
+        end
         function library:label(options)
             local cfg = {
                 enabled = options.enabled or nil,
