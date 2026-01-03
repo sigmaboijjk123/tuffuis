@@ -291,26 +291,44 @@
 
             return (y_cond and x_cond)
         end
+-- Mobile/PC Compatible Drag (overrides the library's broken mobile version)
+function library:draggify(frame)
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    local connection
 
-        function library:draggify(frame)
-            local dragging = false 
-            local start_size = frame.Position
-            local start 
+    local function update(input)
+        local delta = input.Position - dragStart
+        local newPos = UDim2.new(
+            clamp(startPos.X.Scale, startPos.X.Offset + delta.X, 0, 1 - (frame.AbsoluteSize.X / workspace.CurrentCamera.ViewportSize.X)),
+            0,
+            clamp(startPos.Y.Scale, startPos.Y.Offset + delta.Y, 0, 1 - (frame.AbsoluteSize.Y / workspace.CurrentCamera.ViewportSize.Y)),
+            0
+        )
+        library:tween(frame, {Position = newPos}, Enum.EasingStyle.Linear, 0.05)
+        library:close_element()
+    end
 
-            frame.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    dragging = true
-                    start = input.Position
-                    start_size = frame.Position
-                end
-            end)
-
-            frame.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
                 end
             end)
+        end
+    end)
 
+    library:connection(uis.InputChanged, function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
+end
             library:connection(uis.InputChanged, function(input, game_event) 
                 if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
                     local viewport_x = camera.ViewportSize.X
