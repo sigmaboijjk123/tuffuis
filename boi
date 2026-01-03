@@ -291,20 +291,19 @@
 
             return (y_cond and x_cond)
         end
--- Mobile/PC Compatible Drag (overrides the library's broken mobile version)
+-- Mobile/PC Compatible Drag – FIXED VERSION (no nil errors, smoother clamping)
 function library:draggify(frame)
     local dragging = false
     local dragStart = nil
     local startPos = nil
-    local connection
 
     local function update(input)
+        if not startPos then return end  -- safety check
+
         local delta = input.Position - dragStart
         local newPos = UDim2.new(
-            clamp(startPos.X.Scale, startPos.X.Offset + delta.X, 0, 1 - (frame.AbsoluteSize.X / workspace.CurrentCamera.ViewportSize.X)),
-            0,
-            clamp(startPos.Y.Scale, startPos.Y.Offset + delta.Y, 0, 1 - (frame.AbsoluteSize.Y / workspace.CurrentCamera.ViewportSize.Y)),
-            0
+            0, math.clamp(startPos.X.Offset + delta.X, 0, camera.ViewportSize.X - frame.AbsoluteSize.X),
+            0, math.clamp(startPos.Y.Offset + delta.Y, 0, camera.ViewportSize.Y - frame.AbsoluteSize.Y)
         )
         library:tween(frame, {Position = newPos}, Enum.EasingStyle.Linear, 0.05)
         library:close_element()
@@ -314,15 +313,23 @@ function library:draggify(frame)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
-            startPos = frame.Position
+            startPos = frame.Position  -- this is set here, guaranteed
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
+                    dragStart = nil
+                    startPos = nil
                 end
             end)
         end
     end)
 
+    library:connection(uis.InputChanged, function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
+end
  
 
         function library:convert(str)
