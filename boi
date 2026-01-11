@@ -1986,6 +1986,64 @@ end)
                         });
                     end 
 
+function refreshDropdown(cfg)
+    -- Clear existing option instances
+    for _, obj in pairs(cfg.option_instances) do
+        if obj and obj.Parent then
+            obj:Destroy()
+        end
+    end
+    cfg.option_instances = {} -- reset
+
+    -- Loop through items and create new buttons for each
+    for i, itemName in ipairs(cfg.items) do
+        local optionButton = library:create("TextButton", {
+            FontFace = fonts.small;
+            TextColor3 = rgb(245, 245, 245);
+            BorderColor3 = rgb(0, 0, 0);
+            Text = itemName;
+            Parent = cfg.dropdown_object; -- assuming this is your container
+            Name = "\0";
+            Size = dim2(1, 0, 0, 20);
+            Position = dim2(0, 0, 0, (i-1) * 20);
+            BackgroundTransparency = 0.8;
+            BorderSizePixel = 0;
+            TextSize = 14;
+            BackgroundColor3 = rgb(40, 40, 40);
+        })
+
+        -- Optional: add a click callback
+        optionButton.MouseButton1Click:Connect(function()
+            if cfg.multi then
+                -- toggle selection
+                if table.find(cfg.multi_items, itemName) then
+                    for idx, v in ipairs(cfg.multi_items) do
+                        if v == itemName then
+                            table.remove(cfg.multi_items, idx)
+                            break
+                        end
+                    end
+                else
+                    table.insert(cfg.multi_items, itemName)
+                end
+                flags[cfg.flag] = cfg.multi_items
+            else
+                cfg.default = itemName
+                flags[cfg.flag] = itemName
+            end
+            if cfg.callback then
+                cfg.callback(flags[cfg.flag])
+            end
+        end)
+
+        table.insert(cfg.option_instances, optionButton)
+    end
+
+    -- Adjust dropdown_object size if needed
+    local newSizeY = #cfg.items * 20
+    cfg.dropdown_object.Size = dim2(1, 0, 0, newSizeY)
+end
+
                     library:create( "UIPadding" , {
                         Parent = items[ "name" ];
                         PaddingRight = dim(0, 5);
