@@ -2232,19 +2232,14 @@ end)
                 
             return setmetatable(cfg, library)
         end
-    -- Dropdown updater: call as
---   library:refresh_dropdown("DropdownFlagName", {"Option A", "Option B", ...})
--- This attempts to find a dropdown by flag-key or by flag.name and replace its option list,
--- updating stored values and any visible UI parts it can detect.
+-- Updated dropdown updater to accept either:
+-- 1) a string identifier (flag key or flag.name)
+-- 2) the actual dropdown flag table returned by opsec2:dropdown (call library:refresh_dropdown(testss, {...}))
 function library:refresh_dropdown(identifier, new_items)
-    if type(identifier) ~= "string" then
-        error("refresh_dropdown: identifier must be a string (flag key or flag.name)")
-    end
     if type(new_items) ~= "table" then
         error("refresh_dropdown: new_items must be a table")
     end
 
-    -- helper to test membership
     local function contains(tbl, val)
         for _, v in ipairs(tbl) do
             if v == val then return true end
@@ -2252,144 +2247,175 @@ function library:refresh_dropdown(identifier, new_items)
         return false
     end
 
-    for flag_key, flag in pairs(flags) do
-        if type(flag) == "table" then
-            local matches = (flag_key == identifier) or (flag.name == identifier) or (flag.text == identifier)
-            -- common property names for dropdown-like flags: .type, .options, .items
-            local looks_like_dropdown = (flag.type == "dropdown") or (flag.options ~= nil) or (flag.items ~= nil)
+    -- resolve identifier -> flag table and flag_key (if available)
+    local flag_key
+    local flag
 
-            if matches and looks_like_dropdown then
-                -- store new options on the flag
-                flag.options = new_items
-                flag.items = new_items
+    if type(identifier) == "table" then
+        flag = identifier
+        -- try to find its key in library.flags
+        for k, v in pairs(flags) do
+            if v == flag then
+                flag_key = k
+                break
+            end
+        end
+    elseif type(identifier) == "string" then
+        for k, v in pairs(flags) do
+            if type(v) == "table" and (k == identifier or v.name == identifier or v.text == identifier) then
+                flag_key = k
+                flag = v
+                break
+            end
+        end
+    else
+        error("refresh_dropdown: identifier must be a string or the flag table")
+    end
 
-                -- call a provided hook if present (some implementations expose this)
-                if flag.refresh_options and type(flag.refresh_options) == "function" then
-                    pcall(flag.refresh_options, new_items)
+    if not flag then
+        return false
+    end
+
+    -- store new options on the flag (common fields)
+    flag.options = new_items
+    flag.items = new_items
+
+    -- call a provided hook if present (some implementations expose this)
+    if flag.refresh_options and type(flag.refresh_options) == "function" then
+        pcall(flag.refresh_options, new_items)
+    end
+
+    -- Attempt to update common UI containers / templates if present.
+    local parent = flag.option_parent or flag.options_parent or flag.menu or flag.list or flag.container or flag.optionHolder
+    local template = flag.option_template or flag.option_clone or flag.template or flag._option_template or flag.row_template
+    local display = flag.display or flag.selected_label or flag.text_label or flag.button or flag.main_button or flag.selection_display
+    local selected = flag.value or flag.selected or flag.current or flag.default
+    local on_changed = flag.callback or flag.on_change or flag.set or flag.UpdateValue
+
+    -- Rebuild option instances if we can find a parent frame
+    if parent and typeof(parent) == "Instance" then
+        -- Destroy all children except a kept template (if template exists)
+        for _, child in ipairs(parent:GetChildren()) do
+            if template and child == template then
+                -- keep template for cloning (ensure it's hidden)
+                pcall(function() template.Visible = false end)
+            else
+                child:Destroy()
+            end
+        end
+
+        -- Create items
+        for _, opt in ipairs(new_items) do
+            local inst
+            if template and typeof(template) == "Instance" then
+                inst = template:Clone()
+                inst.Visible = true
+                inst.Parent = parent
+                -- ensure unique name to avoid collisions
+                inst.Name = ("Option_%s"):format(tostring(opt))
+
+                -- set text on common objects
+                if inst:IsA("TextButton") or inst:IsA("TextLabel") then
+                    inst.Text = tostring(opt)
+                else
+                    local tchild = inst:FindFirstChildWhichIsA("TextLabel") or inst:FindFirstChildWhichIsA("TextButton")
+                    if tchild then tchild.Text = tostring(opt) end
                 end
 
-                -- Attempt to update common UI containers / templates if present.
-                -- This code is defensive: it checks multiple common field names used in UIs.
-                local parent = flag.option_parent or flag.options_parent or flag.menu or flag.list or flag.container
-                local template = flag.option_template or flag.option_clone or flag.template or flag._option_template
-                local display = flag.display or flag.selected_label or flag.text_label or flag.button or flag.main_button
-                local selected = flag.value or flag.selected or flag.current or flag.default
-                local on_changed = flag.callback or flag.on_change or flag.set or flag.UpdateValue
-
-                -- Rebuild option instances if we can find a parent frame
-                if parent and typeof(parent) == "Instance" then
-                    -- destroy all children except a kept template (if template exists)
-                    for _, child in ipairs(parent:GetChildren()) do
-                        if template and child == template then
-                            -- keep template for cloning
-                        else
-                            child:Destroy()
+                -- hook up basic click behaviour if this is a button
+                if inst:IsA("TextButton") then
+                    inst.MouseButton1Click:Connect(function()
+                        flag.value = opt
+                        flag.selected = opt
+                        if on_changed and type(on_changed) == "function" then
+                            pcall(on_changed, opt)
                         end
-                    end
-
-                    for _, opt in ipairs(new_items) do
-                        local inst
-                        if template and typeof(template) == "Instance" then
-                            inst = template:Clone()
-                            inst.Visible = true
-                            inst.Parent = parent
-                            -- set text on common objects
-                            if inst:IsA("TextButton") or inst:IsA("TextLabel") then
-                                inst.Text = tostring(opt)
-                            else
-                                local tchild = inst:FindFirstChildWhichIsA("TextLabel") or inst:FindFirstChildWhichIsA("TextButton")
-                                if tchild then tchild.Text = tostring(opt) end
+                    end)
+                else
+                    -- try wiring an internal button child fallback
+                    local btn = inst:FindFirstChildWhichIsA("TextButton")
+                    if btn then
+                        btn.MouseButton1Click:Connect(function()
+                            flag.value = opt
+                            flag.selected = opt
+                            if on_changed and type(on_changed) == "function" then
+                                pcall(on_changed, opt)
                             end
-                            -- hook up basic click behaviour if this is a button
-                            if inst:IsA("TextButton") then
-                                inst.MouseButton1Click:Connect(function()
-                                    -- update stored selection
-                                    flag.value = opt
-                                    flag.selected = opt
-                                    if on_changed and type(on_changed) == "function" then
-                                        pcall(on_changed, opt)
-                                    end
-                                end)
-                            else
-                                -- try wiring an InputBegan fallback
-                                if inst:FindFirstChildWhichIsA("TextButton") then
-                                    inst:FindFirstChildWhichIsA("TextButton").MouseButton1Click:Connect(function()
-                                        flag.value = opt
-                                        flag.selected = opt
-                                        if on_changed and type(on_changed) == "function" then
-                                            pcall(on_changed, opt)
-                                        end
-                                    end)
-                                end
-                            end
-                        else
-                            -- no template found -> create a minimal TextButton
-                            inst = Instance.new("TextButton")
-                            inst.Size = UDim2.new(1, 0, 0, 24)
-                            inst.BackgroundTransparency = 1
-                            inst.Text = tostring(opt)
-                            inst.TextSize = 14
-                            inst.TextColor3 = Color3.fromRGB(255, 255, 255)
-                            inst.Parent = parent
-                            inst.MouseButton1Click:Connect(function()
+                        end)
+                    else
+                        -- fallback: connect InputBegan on the instance
+                        inst.InputBegan:Connect(function(input)
+                            if input.UserInputType == Enum.UserInputType.MouseButton1 then
                                 flag.value = opt
                                 flag.selected = opt
                                 if on_changed and type(on_changed) == "function" then
                                     pcall(on_changed, opt)
                                 end
-                            end)
-                        end
+                            end
+                        end)
                     end
                 end
-
-                -- Update display (the visible selected-value control) if present
-                if display and typeof(display) == "Instance" then
-                    if #new_items > 0 then
-                        local newsel = selected
-                        if not newsel or not contains(new_items, newsel) then
-                            newsel = new_items[1]
-                        end
-
-                        if display:IsA("TextButton") or display:IsA("TextLabel") then
-                            display.Text = tostring(newsel)
-                        else
-                            local tchild = display:FindFirstChildWhichIsA("TextLabel") or display:FindFirstChildWhichIsA("TextButton")
-                            if tchild then tchild.Text = tostring(newsel) end
-                        end
-
-                        flag.value = newsel
-                        flag.selected = newsel
-
-                        if on_changed and type(on_changed) == "function" then
-                            pcall(on_changed, newsel)
-                        end
-                    else
-                        -- no items -> clear selection
-                        if display:IsA("TextButton") or display:IsA("TextLabel") then
-                            display.Text = ""
-                        else
-                            local tchild = display:FindFirstChildWhichIsA("TextLabel") or display:FindFirstChildWhichIsA("TextButton")
-                            if tchild then tchild.Text = "" end
-                        end
-                        flag.value = nil
-                        flag.selected = nil
+            else
+                -- no template found -> create a minimal TextButton
+                inst = Instance.new("TextButton")
+                inst.Size = UDim2.new(1, 0, 0, 24)
+                inst.BackgroundTransparency = 1
+                inst.Text = tostring(opt)
+                inst.TextSize = 14
+                inst.TextColor3 = Color3.fromRGB(255, 255, 255)
+                inst.Parent = parent
+                inst.Name = ("Option_%s"):format(tostring(opt))
+                inst.MouseButton1Click:Connect(function()
+                    flag.value = opt
+                    flag.selected = opt
+                    if on_changed and type(on_changed) == "function" then
+                        pcall(on_changed, opt)
                     end
-                end
-
-                -- If the dropdown keeps a config flag mapping, update that too
-                if library.config_flags and library.config_flags[flag_key] then
-                    -- If the config hook expects a specific shape, we don't change it here.
-                    -- But it's useful to store the latest options table in case other code reads it.
-                    library.config_flags[flag_key .. "_options"] = new_items
-                end
-
-                return true -- refreshed successfully
+                end)
             end
         end
     end
 
-    -- Not found
-    return false
+    -- Update display (the visible selected-value control) if present
+    if display and typeof(display) == "Instance" then
+        if #new_items > 0 then
+            local newsel = selected
+            if not newsel or not contains(new_items, newsel) then
+                newsel = new_items[1]
+            end
+
+            if display:IsA("TextButton") or display:IsA("TextLabel") then
+                display.Text = tostring(newsel)
+            else
+                local tchild = display:FindFirstChildWhichIsA("TextLabel") or display:FindFirstChildWhichIsA("TextButton")
+                if tchild then tchild.Text = tostring(newsel) end
+            end
+
+            flag.value = newsel
+            flag.selected = newsel
+
+            if on_changed and type(on_changed) == "function" then
+                pcall(on_changed, newsel)
+            end
+        else
+            -- no items -> clear selection
+            if display:IsA("TextButton") or display:IsA("TextLabel") then
+                display.Text = ""
+            else
+                local tchild = display:FindFirstChildWhichIsA("TextLabel") or display:FindFirstChildWhichIsA("TextButton")
+                if tchild then tchild.Text = "" end
+            end
+            flag.value = nil
+            flag.selected = nil
+        end
+    end
+
+    -- If the dropdown keeps a config flag mapping, update that too
+    if library.config_flags and flag_key and library.config_flags[flag_key] then
+        library.config_flags[flag_key .. "_options"] = new_items
+    end
+
+    return true
 end
         function library:label(options)
             local cfg = {
