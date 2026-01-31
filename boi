@@ -2417,6 +2417,48 @@ function library:refresh_dropdown(identifier, new_items)
 
     return true
 end
+
+
+
+-- set transparency for entire window (0..1)
+function library:set_window_transparency(alpha)
+    alpha = clamp(alpha, 0, 1)
+
+    local function apply(inst)
+        -- GuiObject-derived instances have BackgroundTransparency and sometimes TextTransparency/ImageTransparency
+        if inst:IsA("GuiObject") then
+            if inst.BackgroundTransparency ~= nil then
+                inst.BackgroundTransparency = alpha
+            end
+
+            if (inst:IsA("ImageLabel") or inst:IsA("ImageButton")) and inst.ImageTransparency ~= nil then
+                inst.ImageTransparency = alpha
+            end
+
+            if (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) and inst.TextTransparency ~= nil then
+                inst.TextTransparency = alpha
+            end
+        end
+
+        -- UIStroke is not a GuiObject type but is often a child; set its transparency too
+        if inst:IsA("UIStroke") and inst.Transparency ~= nil then
+            inst.Transparency = alpha
+        end
+
+        -- recurse children
+        for _, child in ipairs(inst:GetChildren()) do
+            apply(child)
+        end
+    end
+
+    -- apply to the main window if present
+    if library["items"] and library["items"].main then
+        apply(library["items"].main)
+    end
+end
+
+
+
         function library:label(options)
             local cfg = {
                 enabled = options.enabled or nil,
