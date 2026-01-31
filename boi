@@ -2419,13 +2419,14 @@ function library:refresh_dropdown(identifier, new_items)
 end
 
 
-
--- set transparency for entire window (0..1)
+-- set transparency for entire window (0..1) — safer version that doesn't assume a child named "main"
 function library:set_window_transparency(alpha)
     alpha = clamp(alpha, 0, 1)
 
     local function apply(inst)
-        -- GuiObject-derived instances have BackgroundTransparency and sometimes TextTransparency/ImageTransparency
+        if not (typeof(inst) == "Instance") then return end
+
+        -- GuiObject-derived instances
         if inst:IsA("GuiObject") then
             if inst.BackgroundTransparency ~= nil then
                 inst.BackgroundTransparency = alpha
@@ -2440,22 +2441,31 @@ function library:set_window_transparency(alpha)
             end
         end
 
-        -- UIStroke is not a GuiObject type but is often a child; set its transparency too
+        -- UIStroke (set on instances, not a GuiObject subclass)
         if inst:IsA("UIStroke") and inst.Transparency ~= nil then
             inst.Transparency = alpha
         end
 
-        -- recurse children
         for _, child in ipairs(inst:GetChildren()) do
             apply(child)
         end
     end
 
-    -- apply to the main window if present
-    if library["items"] and library["items"].main then
-        apply(library["items"].main)
+    -- safe-guard: library["items"] may be nil or not a ScreenGui in some states
+    if library and library["items"] and typeof(library["items"]) == "Instance" then
+        -- apply to the ScreenGui itself and all descendants
+        apply(library["items"])
+    else
+        -- fallback: scan CoreGui for our library ScreenGui(s) just in case
+        for _, sg in ipairs(coregui:GetChildren()) do
+            -- optionally detect your library's ScreenGui by some property; here we try to be permissive
+            if sg:IsA("ScreenGui") then
+                apply(sg)
+            end
+        end
     end
 end
+
 
 
 
