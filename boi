@@ -2571,9 +2571,24 @@ end
             return setmetatable(cfg, library)
         end 
         -- Input element (single-line textbox)
+-- Input element (single-line textbox) — parent is optional now (falls back to `self` or library main)
 function library:input(properties)
     local props = properties or {}
-    local parent = props.parent or error("input: missing parent (props.parent)")
+    -- Resolve parent: explicit prop -> self.items tab parent/page -> library main frame
+    local parent = props.parent
+    if not parent then
+        if self and type(self) == "table" and self.items then
+            -- common keys used by library element containers
+            parent = self.items["tab_parent"] or self.items["tab"] or self.items["page"] or self.items["tabpage"] or self.items["tab_holder"] or self.items["tab_parent"]
+        end
+        -- final fallback to library main items
+        parent = parent or (library.items and library.items["main"]) or (library["items"] and library["items"]["main"])
+    end
+
+    if not parent then
+        error("input: missing parent. Provide properties.parent or call as `some_section:input{...}` where `some_section` is a library element with `items`.")
+    end
+
     local name = props.name or props.Name or "Input"
     local placeholder = props.placeholder or props.Placeholder or ""
     local default = props.default or props.Default or ""
@@ -2587,12 +2602,12 @@ function library:input(properties)
         Size = width;
         BorderSizePixel = 0;
         Name = "\0";
-    });
+    })
 
     library:create("UICorner", {
         Parent = container;
         CornerRadius = dim(0, 6);
-    });
+    })
 
     -- Label
     local label = library:create("TextLabel", {
@@ -2606,7 +2621,7 @@ function library:input(properties)
         Size = dim2(1, -20, 0, 16);
         TextXAlignment = Enum.TextXAlignment.Left;
         Name = "\0";
-    });
+    })
 
     -- Input background
     local input_bg = library:create("Frame", {
@@ -2616,12 +2631,12 @@ function library:input(properties)
         Position = dim2(0, 10, 0, 22);
         BorderSizePixel = 0;
         Name = "\0";
-    }); library:apply_theme(input_bg, "accent", "BackgroundColor3");
+    }) library:apply_theme(input_bg, "accent", "BackgroundColor3")
 
     library:create("UICorner", {
         Parent = input_bg;
         CornerRadius = dim(0, 6);
-    });
+    })
 
     -- TextBox
     local textbox = library:create("TextBox", {
@@ -2637,7 +2652,7 @@ function library:input(properties)
         PlaceholderText = placeholder;
         TextXAlignment = Enum.TextXAlignment.Left;
         Name = "\0";
-    }); library:apply_theme(textbox, "accent", "TextColor3");
+    }) library:apply_theme(textbox, "accent", "TextColor3")
 
     -- Returned API object
     local obj = {
@@ -2645,18 +2660,18 @@ function library:input(properties)
         open = false;
         set_visible = function(self, visible)
             container.Visible = visible
-        end,
+        end;
         set = function(self, val)
-            textbox.Text = tostring(val)
+            textbox.Text = tostring(val or "")
             obj.value = textbox.Text
             if flag then
                 flags[flag] = obj.value
             end
             if on_change then pcall(on_change, obj.value) end
-        end,
+        end;
         get = function(self)
             return obj.value
-        end,
+        end;
     }
 
     -- Hook up library flag/config integration
@@ -2677,18 +2692,15 @@ function library:input(properties)
         obj.value = textbox.Text
         if flag then flags[flag] = obj.value end
         if on_change then
-            -- protect callback
             local ok, err = pcall(on_change, obj.value, enterPressed)
             if not ok then
-                -- fail silently to avoid breaking UI
                 warn("input on_change error:", err)
             end
         end
     end)
 
-    -- mouse interactions match other elements (hover styling can be added here if needed)
+    -- Hover interactions
     textbox.MouseEnter:Connect(function()
-        -- subtle highlight on hover
         library:tween(input_bg, {BackgroundColor3 = rgb(30,30,34)}, Enum.EasingStyle.Quad, 0.12)
     end)
     textbox.MouseLeave:Connect(function()
@@ -2697,6 +2709,8 @@ function library:input(properties)
 
     return setmetatable(obj, library)
 end
+
+
         function library:colorpicker(options) 
             local cfg = {
                 name = options.name or "Color", 
