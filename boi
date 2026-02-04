@@ -2570,7 +2570,133 @@ end
 
             return setmetatable(cfg, library)
         end 
-        
+        -- Input element (single-line textbox)
+function library:input(properties)
+    local props = properties or {}
+    local parent = props.parent or error("input: missing parent (props.parent)")
+    local name = props.name or props.Name or "Input"
+    local placeholder = props.placeholder or props.Placeholder or ""
+    local default = props.default or props.Default or ""
+    local flag = props.flag or props.Flag
+    local width = props.width or props.Width or dim2(1, 0, 0, 36)
+    local on_change = props.on_change or props.OnChange
+
+    local container = library:create("Frame", {
+        Parent = parent;
+        BackgroundTransparency = 1;
+        Size = width;
+        BorderSizePixel = 0;
+        Name = "\0";
+    });
+
+    library:create("UICorner", {
+        Parent = container;
+        CornerRadius = dim(0, 6);
+    });
+
+    -- Label
+    local label = library:create("TextLabel", {
+        Parent = container;
+        FontFace = fonts.small;
+        Text = name;
+        TextSize = 14;
+        TextColor3 = rgb(162, 162, 165);
+        BackgroundTransparency = 1;
+        Position = dim2(0, 10, 0, 6);
+        Size = dim2(1, -20, 0, 16);
+        TextXAlignment = Enum.TextXAlignment.Left;
+        Name = "\0";
+    });
+
+    -- Input background
+    local input_bg = library:create("Frame", {
+        Parent = container;
+        BackgroundColor3 = rgb(25, 25, 29);
+        Size = dim2(1, -20, 0, 24);
+        Position = dim2(0, 10, 0, 22);
+        BorderSizePixel = 0;
+        Name = "\0";
+    }); library:apply_theme(input_bg, "accent", "BackgroundColor3");
+
+    library:create("UICorner", {
+        Parent = input_bg;
+        CornerRadius = dim(0, 6);
+    });
+
+    -- TextBox
+    local textbox = library:create("TextBox", {
+        Parent = input_bg;
+        Text = default;
+        TextSize = 14;
+        FontFace = fonts.small;
+        TextColor3 = rgb(255, 255, 255);
+        BackgroundTransparency = 1;
+        Size = dim2(1, -10, 1, 0);
+        Position = dim2(0, 8, 0, 0);
+        ClearTextOnFocus = false;
+        PlaceholderText = placeholder;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        Name = "\0";
+    }); library:apply_theme(textbox, "accent", "TextColor3");
+
+    -- Returned API object
+    local obj = {
+        value = textbox.Text or default;
+        open = false;
+        set_visible = function(self, visible)
+            container.Visible = visible
+        end,
+        set = function(self, val)
+            textbox.Text = tostring(val)
+            obj.value = textbox.Text
+            if flag then
+                flags[flag] = obj.value
+            end
+            if on_change then pcall(on_change, obj.value) end
+        end,
+        get = function(self)
+            return obj.value
+        end,
+    }
+
+    -- Hook up library flag/config integration
+    if flag then
+        flags[flag] = textbox.Text
+        library.config_flags[flag] = function(v)
+            textbox.Text = tostring(v or "")
+            obj.value = textbox.Text
+        end
+    end
+
+    -- Events
+    library:connection(textbox:GetPropertyChangedSignal("Text"), function()
+        obj.value = textbox.Text
+    end)
+
+    library:connection(textbox.FocusLost, function(enterPressed)
+        obj.value = textbox.Text
+        if flag then flags[flag] = obj.value end
+        if on_change then
+            -- protect callback
+            local ok, err = pcall(on_change, obj.value, enterPressed)
+            if not ok then
+                -- fail silently to avoid breaking UI
+                warn("input on_change error:", err)
+            end
+        end
+    end)
+
+    -- mouse interactions match other elements (hover styling can be added here if needed)
+    textbox.MouseEnter:Connect(function()
+        -- subtle highlight on hover
+        library:tween(input_bg, {BackgroundColor3 = rgb(30,30,34)}, Enum.EasingStyle.Quad, 0.12)
+    end)
+    textbox.MouseLeave:Connect(function()
+        library:tween(input_bg, {BackgroundColor3 = rgb(25,25,29)}, Enum.EasingStyle.Quad, 0.12)
+    end)
+
+    return setmetatable(obj, library)
+end
         function library:colorpicker(options) 
             local cfg = {
                 name = options.name or "Color", 
