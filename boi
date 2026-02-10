@@ -188,15 +188,15 @@
             return getcustomasset(Name .. ".font");
         end
         
-        local Medium = Register_Font("Medium", 200, "Normal", {
-            Id = "Medium.ttf",
-            Font = game:HttpGet("https://github.com/i77lhm/storage/raw/refs/heads/main/fonts/Inter_28pt-Medium.ttf"),
-        })
+      local Medium = Register_Font("Medium", 400, "Normal", {
+        Id = "Medium.ttf",
+        Font = game:HttpGet("https://www.roblox.com/asset/?id=7300614437"),  -- Cartoon font ID
+    })
 
-        local SemiBold = Register_Font("SemiBold", 200, "Normal", {
-            Id = "SemiBold.ttf",
-            Font = game:HttpGet("https://github.com/i77lhm/storage/raw/refs/heads/main/fonts/Inter_28pt-SemiBold.ttf"),
-        })
+    local SemiBold = Register_Font("SemiBold", 400, "Normal", {
+        Id = "SemiBold.ttf",
+        Font = game:HttpGet("https://www.roblox.com/asset/?id=7300614437"),  -- Same Cartoon font ID
+    })
 
         fonts = {
             small = Font.new(Medium, Enum.FontWeight.Regular, Enum.FontStyle.Normal);
