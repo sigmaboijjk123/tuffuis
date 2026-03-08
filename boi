@@ -399,7 +399,7 @@ end
         function library:load_config(config_json) 
             local config = http_service:JSONDecode(config_json)
             
-            for _, v in config do 
+            for _, v in pairs(config) do 
                 local function_set = library.config_flags[_]
                 
                 if _ == "config_name_list" then 
