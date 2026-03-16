@@ -292,7 +292,7 @@ accent = rgb(255, 255, 255),
 
             return (y_cond and x_cond)
         end
--- Mobile/PC Compatible Drag – FIXED VERSION (no nil errors, smoother clamping)
+
 function library:draggify(frame)
     local dragging = false
     local dragStart = nil
