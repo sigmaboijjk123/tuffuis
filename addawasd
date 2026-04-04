@@ -198,34 +198,48 @@ function Library:CreateLabel(Properties, IsHud)
 	return Library:Create(_Instance, Properties);
 end;
 
--- ── Dragging: now supports both mouse and touch ─────────────
+-- ── Dragging: mouse uses PrimaryDown loop, touch uses InputChanged on the specific finger ──
 function Library:MakeDraggable(Instance, Cutoff)
 	Instance.Active = true;
 
 	Instance.InputBegan:Connect(function(Input)
-		-- Accept both left-click and touch
-		if IsPrimaryInput(Input.UserInputType) then
-			local ObjPos = Vector2.new(
-				Mouse.X - Instance.AbsolutePosition.X,
-				Mouse.Y - Instance.AbsolutePosition.Y
-			);
+		if not IsPrimaryInput(Input.UserInputType) then return end
 
-			if ObjPos.Y > (Cutoff or 40) then
-				return;
-			end;
+		local isTouch = Input.UserInputType == Enum.UserInputType.Touch
+		local startX = isTouch and Input.Position.X or Mouse.X
+		local startY = isTouch and Input.Position.Y or Mouse.Y
 
-			-- PrimaryDown tracks the held state for both mouse and touch
+		local ObjPos = Vector2.new(
+			startX - Instance.AbsolutePosition.X,
+			startY - Instance.AbsolutePosition.Y
+		)
+
+		if ObjPos.Y > (Cutoff or 40) then return end
+
+		if isTouch then
+			-- Track the exact finger via InputChanged; no polling needed
+			local changedConn, endedConn
+			changedConn = InputService.InputChanged:Connect(function(inp)
+				if inp ~= Input then return end
+				Instance.Position = UDim2.new(
+					0, inp.Position.X - ObjPos.X + (Instance.Size.X.Offset * Instance.AnchorPoint.X),
+					0, inp.Position.Y - ObjPos.Y + (Instance.Size.Y.Offset * Instance.AnchorPoint.Y)
+				)
+			end)
+			endedConn = InputService.InputEnded:Connect(function(inp)
+				if inp ~= Input then return end
+				changedConn:Disconnect()
+				endedConn:Disconnect()
+			end)
+		else
 			while PrimaryDown do
 				Instance.Position = UDim2.new(
-					0,
-					Mouse.X - ObjPos.X + (Instance.Size.X.Offset * Instance.AnchorPoint.X),
-					0,
-					Mouse.Y - ObjPos.Y + (Instance.Size.Y.Offset * Instance.AnchorPoint.Y)
-				);
-
-				RenderStepped:Wait();
-			end;
-		end;
+					0, Mouse.X - ObjPos.X + (Instance.Size.X.Offset * Instance.AnchorPoint.X),
+					0, Mouse.Y - ObjPos.Y + (Instance.Size.Y.Offset * Instance.AnchorPoint.Y)
+				)
+				RenderStepped:Wait()
+			end
+		end
 	end)
 end;
 
@@ -2080,30 +2094,50 @@ do
 
 		-- ── Slider drag (mouse + touch) ────────────────────────
 		SliderInner.InputBegan:Connect(function(Input)
-			if IsPrimaryInput(Input.UserInputType) and not Library:MouseIsOverOpenedFrame() then
-				local mPos = Mouse.X;
-				local gPos = Fill.Size.X.Offset;
-				local Diff = mPos - (Fill.AbsolutePosition.X + gPos);
+			if not IsPrimaryInput(Input.UserInputType) or Library:MouseIsOverOpenedFrame() then return end
 
+			local isTouch = Input.UserInputType == Enum.UserInputType.Touch
+
+			-- Capture initial positions from the Input object (reliable on mobile)
+			local mPos = isTouch and Input.Position.X or Mouse.X
+			local gPos = Fill.Size.X.Offset
+			local Diff = mPos - (Fill.AbsolutePosition.X + gPos)
+
+			local function doUpdate(currentX)
+				local nX = math.clamp(gPos + (currentX - mPos) + Diff, 0, Slider.MaxSize)
+				local nValue = Slider:GetValueFromXOffset(nX)
+				local OldValue = Slider.Value
+				Slider.Value = nValue
+				Slider:Display()
+				if nValue ~= OldValue then
+					Library:SafeCallback(Slider.Callback, Slider.Value)
+					Library:SafeCallback(Slider.Changed, Slider.Value)
+				end
+			end
+
+			if isTouch then
+				-- For touch: track the specific finger via InputChanged; no polling
+				local changedConn, endedConn
+				changedConn = InputService.InputChanged:Connect(function(inp)
+					if inp == Input then
+						doUpdate(inp.Position.X)
+					end
+				end)
+				endedConn = InputService.InputEnded:Connect(function(inp)
+					if inp == Input then
+						changedConn:Disconnect()
+						endedConn:Disconnect()
+						Library:AttemptSave()
+					end
+				end)
+			else
+				-- For mouse: poll with RenderStepped as before
 				while PrimaryDown do
-					local nMPos = Mouse.X;
-					local nX = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize);
-
-					local nValue = Slider:GetValueFromXOffset(nX);
-					local OldValue = Slider.Value;
-					Slider.Value = nValue;
-					Slider:Display();
-
-					if nValue ~= OldValue then
-						Library:SafeCallback(Slider.Callback, Slider.Value);
-						Library:SafeCallback(Slider.Changed, Slider.Value);
-					end;
-
-					RenderStepped:Wait();
-				end;
-
-				Library:AttemptSave();
-			end;
+					doUpdate(Mouse.X)
+					RenderStepped:Wait()
+				end
+				Library:AttemptSave()
+			end
 		end);
 
 		Slider:Display();
@@ -2686,52 +2720,20 @@ do
 	Library.WatermarkText = WatermarkLabel;
 	Library:MakeDraggable(Library.Watermark);
 
+	-- Keybind HUD removed; dummy frames kept so KeyPicker:Update() doesn't error
 	local KeybindOuter = Library:Create('Frame', {
-		AnchorPoint = Vector2.new(0, 0.5);
-		BorderColor3 = Color3.new(0, 0, 0);
-		Position = UDim2.new(0, 10, 0.5, 0);
-		Size = UDim2.new(0, 210, 0, 20);
+		BackgroundTransparency = 1;
+		Size = UDim2.fromOffset(0, 0);
 		Visible = false;
-		ZIndex = 100;
+		ZIndex = 1;
 		Parent = ScreenGui;
-	});
-
-	local KeybindInner = Library:Create('Frame', {
-		BackgroundColor3 = Library.MainColor;
-		BorderColor3 = Library.OutlineColor;
-		BorderMode = Enum.BorderMode.Inset;
-		Size = UDim2.new(1, 0, 1, 0);
-		ZIndex = 101;
-		Parent = KeybindOuter;
-	});
-
-	Library:AddToRegistry(KeybindInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; }, true);
-
-	local ColorFrame = Library:Create('Frame', {
-		BackgroundColor3 = Library.AccentColor;
-		BorderSizePixel = 0;
-		Size = UDim2.new(1, 0, 0, 2);
-		ZIndex = 102;
-		Parent = KeybindInner;
-	});
-
-	Library:AddToRegistry(ColorFrame, { BackgroundColor3 = 'AccentColor'; }, true);
-
-	local KeybindLabel = Library:CreateLabel({
-		Size = UDim2.new(1, 0, 0, 20);
-		Position = UDim2.fromOffset(5, 2),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = 'Keybinds';
-		ZIndex = 104;
-		Parent = KeybindInner;
 	});
 
 	local KeybindContainer = Library:Create('Frame', {
 		BackgroundTransparency = 1;
-		Size = UDim2.new(1, 0, 1, -20);
-		Position = UDim2.new(0, 0, 0, 20);
+		Size = UDim2.fromOffset(0, 0);
 		ZIndex = 1;
-		Parent = KeybindInner;
+		Parent = KeybindOuter;
 	});
 
 	Library:Create('UIListLayout', {
@@ -2747,7 +2749,6 @@ do
 
 	Library.KeybindFrame = KeybindOuter;
 	Library.KeybindContainer = KeybindContainer;
-	Library:MakeDraggable(KeybindOuter);
 end;
 
 function Library:SetWatermarkVisibility(Bool)
@@ -3501,10 +3502,39 @@ function Library:CreateWindow(...)
 			BorderColor3 = 'AccentColorDark';
 		});
 
+		-- MakeDraggable handles touch dragging via InputChanged on the specific finger
 		Library:MakeDraggable(MobileToggleBtnOuter, 40);
 
-		MobileToggleBtnInner.Activated:Connect(function()
-			task.spawn(Library.Toggle)
+		-- Tap detection: only toggle if the finger didn't travel far (not a drag)
+		local TAP_THRESHOLD = 12
+		local tapStartPos = nil
+		local didDragBtn = false
+
+		MobileToggleBtnOuter.InputBegan:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.Touch then
+				tapStartPos = Vector2.new(Input.Position.X, Input.Position.Y)
+				didDragBtn = false
+
+				local movedConn
+				movedConn = InputService.InputChanged:Connect(function(inp)
+					if inp ~= Input then return end
+					if tapStartPos then
+						local delta = (Vector2.new(inp.Position.X, inp.Position.Y) - tapStartPos).Magnitude
+						if delta > TAP_THRESHOLD then
+							didDragBtn = true
+						end
+					end
+					movedConn:Disconnect()
+				end)
+			end
+		end)
+
+		MobileToggleBtnOuter.InputEnded:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.Touch and not didDragBtn then
+				task.spawn(Library.Toggle)
+			end
+			tapStartPos = nil
+			didDragBtn = false
 		end)
 
 		Window.MobileToggleButton = MobileToggleBtnOuter;
