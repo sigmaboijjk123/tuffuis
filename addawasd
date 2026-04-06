@@ -3472,22 +3472,26 @@ function Library:CreateWindow(...)
 		Fading = false;
 	end
 
-	-- ── Mobile-only floating toggle button ────────────────────
 	if IsMobile then
 		local MobileToggleBtnOuter = Library:Create('Frame', {
 			AnchorPoint = Vector2.new(0, 0.5);
 			BackgroundColor3 = Color3.new(0, 0, 0);
-			BorderColor3 = Color3.new(0, 0, 0);
+			BorderSizePixel = 0;
 			Position = UDim2.new(0, 8, 0.5, 0);
-			Size = UDim2.fromOffset(40, 40);
+			Size = UDim2.fromOffset(44, 44);
 			ZIndex = 300;
 			Parent = ScreenGui;
 		});
 
+		Library:Create('UICorner', {
+			CornerRadius = UDim.new(0, 8);
+			Parent = MobileToggleBtnOuter;
+		});
+
 		local MobileToggleBtnInner = Library:Create('TextButton', {
+			Active = true;
 			BackgroundColor3 = Library.AccentColor;
-			BorderColor3 = Library.AccentColorDark;
-			BorderMode = Enum.BorderMode.Inset;
+			BorderSizePixel = 0;
 			Size = UDim2.fromScale(1, 1);
 			Font = Library.Font;
 			Text = '☰';
@@ -3497,44 +3501,81 @@ function Library:CreateWindow(...)
 			Parent = MobileToggleBtnOuter;
 		});
 
-		Library:AddToRegistry(MobileToggleBtnInner, {
-			BackgroundColor3 = 'AccentColor';
-			BorderColor3 = 'AccentColorDark';
+		Library:Create('UICorner', {
+			CornerRadius = UDim.new(0, 8);
+			Parent = MobileToggleBtnInner;
 		});
 
-		-- MakeDraggable handles touch dragging via InputChanged on the specific finger
-		Library:MakeDraggable(MobileToggleBtnOuter, 40);
+		Library:Create('UIGradient', {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 180)),
+			});
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.15),
+				NumberSequenceKeypoint.new(1, 0.35),
+			});
+			Rotation = 90;
+			Parent = MobileToggleBtnInner;
+		});
 
-		-- Tap detection: only toggle if the finger didn't travel far (not a drag)
+		Library:AddToRegistry(MobileToggleBtnInner, {
+			BackgroundColor3 = 'AccentColor';
+		});
+
 		local TAP_THRESHOLD = 12
 		local tapStartPos = nil
-		local didDragBtn = false
+		local didDrag = false
 
-		MobileToggleBtnOuter.InputBegan:Connect(function(Input)
-			if Input.UserInputType == Enum.UserInputType.Touch then
-				tapStartPos = Vector2.new(Input.Position.X, Input.Position.Y)
-				didDragBtn = false
+		MobileToggleBtnInner.InputBegan:Connect(function(Input)
+			if not IsPrimaryInput(Input.UserInputType) then return end
 
-				local movedConn
-				movedConn = InputService.InputChanged:Connect(function(inp)
+			local isTouch = Input.UserInputType == Enum.UserInputType.Touch
+			local startX = isTouch and Input.Position.X or Mouse.X
+			local startY = isTouch and Input.Position.Y or Mouse.Y
+
+			tapStartPos = Vector2.new(startX, startY)
+			didDrag = false
+
+			local ObjPos = Vector2.new(
+				startX - MobileToggleBtnOuter.AbsolutePosition.X,
+				startY - MobileToggleBtnOuter.AbsolutePosition.Y
+			)
+
+			local function moveTo(px, py)
+				local delta = (Vector2.new(px, py) - tapStartPos).Magnitude
+				if delta > TAP_THRESHOLD then didDrag = true end
+				MobileToggleBtnOuter.Position = UDim2.new(
+					0, px - ObjPos.X + (MobileToggleBtnOuter.Size.X.Offset * MobileToggleBtnOuter.AnchorPoint.X),
+					0, py - ObjPos.Y + (MobileToggleBtnOuter.Size.Y.Offset * MobileToggleBtnOuter.AnchorPoint.Y)
+				)
+			end
+
+			if isTouch then
+				local changedConn, endedConn
+				changedConn = InputService.InputChanged:Connect(function(inp)
 					if inp ~= Input then return end
-					if tapStartPos then
-						local delta = (Vector2.new(inp.Position.X, inp.Position.Y) - tapStartPos).Magnitude
-						if delta > TAP_THRESHOLD then
-							didDragBtn = true
-						end
-					end
-					movedConn:Disconnect()
+					moveTo(inp.Position.X, inp.Position.Y)
 				end)
+				endedConn = InputService.InputEnded:Connect(function(inp)
+					if inp ~= Input then return end
+					changedConn:Disconnect()
+					endedConn:Disconnect()
+				end)
+			else
+				while PrimaryDown do
+					moveTo(Mouse.X, Mouse.Y)
+					RenderStepped:Wait()
+				end
 			end
 		end)
 
-		MobileToggleBtnOuter.InputEnded:Connect(function(Input)
-			if Input.UserInputType == Enum.UserInputType.Touch and not didDragBtn then
+		MobileToggleBtnInner.InputEnded:Connect(function(Input)
+			if IsPrimaryInput(Input.UserInputType) and not didDrag then
 				task.spawn(Library.Toggle)
 			end
 			tapStartPos = nil
-			didDragBtn = false
+			didDrag = false
 		end)
 
 		Window.MobileToggleButton = MobileToggleBtnOuter;
